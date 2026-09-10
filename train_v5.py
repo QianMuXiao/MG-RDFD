@@ -27,6 +27,7 @@ from generative.losses import PerceptualLoss, PatchAdversarialLoss
 from pytorch_msssim import ssim
 from lpips import LPIPS
 from mri_dataset_v4 import PairMRIDataset
+from training_utils import average_module_gradients, DistributedEvalSampler, mean_sample_psnr
 
 # torch.autograd.set_detect_anomaly(True)
 
@@ -178,10 +179,7 @@ def tahn2sigmoid(input):
     return (input + 1) / 2
 
 def calculate_psnr(img1, img2):
-    mse = nn.functional.mse_loss(img1, img2)
-    if mse == 0:
-        return float('inf')
-    return 20 * torch.log10(1.0 / torch.sqrt(mse))
+    return mean_sample_psnr(img1, img2)
 
 def build_mirror_gauss_sigma(mu, sigma):
     """
@@ -225,6 +223,8 @@ def train_FDA_V2(
     writer=None,
     model_save_path = None,
     model_save_interval=10,
+    start_epoch=0,
+    init_best_a2b_psnr=0.0,
 ):
     """
     loss_cfg: 可选损失权重字典，例如：
@@ -259,9 +259,9 @@ def train_FDA_V2(
     
     try:
         
-        best_a2b_psnr = 0
+        best_a2b_psnr = float(init_best_a2b_psnr)
     
-        for epoch_nums in range(Max_Epoch):
+        for epoch_nums in range(start_epoch, Max_Epoch):
             if train_sampler is not None:
                 train_sampler.set_epoch(epoch_nums)
 
@@ -529,6 +529,7 @@ def train_FDA_V2(
                     opt_cont_sampler.zero_grad(set_to_none=True)
                     opt_style_sampler.zero_grad(set_to_none=True)
                     total_loss.backward()
+                    average_module_gradients(generator.module)
                     opt_gen.step()
                     opt_cont_sampler.step()
                     opt_style_sampler.step()
@@ -548,6 +549,7 @@ def train_FDA_V2(
                     opt_cont_sampler.zero_grad()
                     opt_style_sampler.zero_grad()
                     total_loss.backward()
+                    average_module_gradients(generator.module)
                     opt_gen.step()
                     opt_cont_sampler.step()
                     opt_style_sampler.step()
@@ -785,6 +787,9 @@ def train_FDA_V2(
             generator.eval()
             disc_A.eval()
             disc_B.eval()
+            # Unequal validation shard lengths must not enter DDP collectives.
+            eval_cont_sampler = cont_sampler.module
+            eval_style_sampler = style_sampler.module
                         
                 
             # --------------------------
@@ -852,13 +857,13 @@ def train_FDA_V2(
                     sample_fake_B2A_B = generator.module.sampling(z_mu_B, z_sigma_B)
                     sample_fake_B2A_A = generator.module.sampling(fake_z_mu_B2A, fake_z_sigma_B2A)
                     
-                    cont_fake_A2B, _ = cont_sampler(z_mu_A, fake_z_mu_A2B, z_sigma_A, fake_z_sigma_A2B, sample_fake_A2B_A, sample_fake_A2B_B)
-                    style_fake_A2B_A, style_fake_A2B_B, _, _ = style_sampler(z_mu_A, fake_z_mu_A2B, z_sigma_A, fake_z_sigma_A2B, sample_fake_A2B_A, sample_fake_A2B_B)
+                    cont_fake_A2B, _ = eval_cont_sampler(z_mu_A, fake_z_mu_A2B, z_sigma_A, fake_z_sigma_A2B, sample_fake_A2B_A, sample_fake_A2B_B)
+                    style_fake_A2B_A, style_fake_A2B_B, _, _ = eval_style_sampler(z_mu_A, fake_z_mu_A2B, z_sigma_A, fake_z_sigma_A2B, sample_fake_A2B_A, sample_fake_A2B_B)
                     
                     
                     
-                    cont_fake_B2A, _ = cont_sampler(fake_z_mu_B2A, z_mu_B, fake_z_sigma_B2A, z_sigma_B, sample_fake_B2A_A, sample_fake_B2A_B)
-                    style_fake_B2A_A, style_fake_B2A_B, _, _ = style_sampler(fake_z_mu_B2A, z_mu_B, fake_z_sigma_B2A, z_sigma_B, sample_fake_B2A_A, sample_fake_B2A_B)
+                    cont_fake_B2A, _ = eval_cont_sampler(fake_z_mu_B2A, z_mu_B, fake_z_sigma_B2A, z_sigma_B, sample_fake_B2A_A, sample_fake_B2A_B)
+                    style_fake_B2A_A, style_fake_B2A_B, _, _ = eval_style_sampler(fake_z_mu_B2A, z_mu_B, fake_z_sigma_B2A, z_sigma_B, sample_fake_B2A_A, sample_fake_B2A_B)
 
 
                     if epoch_nums >= warm_up_epoch:
@@ -1190,7 +1195,7 @@ if __name__ == '__main__':
                             pin_memory = True,
                             drop_last=True
                             )
-    val_sampler = DSampler(val_dataset, shuffle=True)
+    val_sampler = DistributedEvalSampler(val_dataset, shuffle=True)
     val_loader = DataLoader(val_dataset, 
                             batch_size=batch_size, 
                             sampler=val_sampler,
@@ -1448,4 +1453,6 @@ if __name__ == '__main__':
         writer = writer,
         model_save_path = model_save_path,
         model_save_interval=10,
+        start_epoch=start_epoch,
+        init_best_a2b_psnr=init_best_a2b_psnr,
     )

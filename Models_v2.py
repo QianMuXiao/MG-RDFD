@@ -1029,18 +1029,18 @@ class AutoencoderKL(nn.Module):
         mu, sigma = self.encode(x)
         if label == 'A':
             z_A = self.sampling(mu, sigma)
-            rec_A = self.decode_A(z_A)
+            rec_A = self.decode_A_raw(z_A)
             mu_flip, sig_flip = self.flip_distribution(mu, sigma)
             z_A2B = self.sampling(mu_flip, sig_flip)
-            rec_B = self.decode_mr(z_A2B)
+            rec_B = self.decode_B_raw(z_A2B)
         elif label == 'B':
             z_B = self.sampling(mu, sigma)
-            rec_B = self.decode_B(z_B)
+            rec_B = self.decode_B_raw(z_B)
             mu_flip, sig_flip = self.flip_distribution(mu, sigma)
             z_B2A = self.sampling(mu_flip, sig_flip)
-            rec_A = self.decode_ct(z_B2A)
+            rec_A = self.decode_A_raw(z_B2A)
         else:
-            raise ValueError("label must be 'ct' or 'mr'")
+            raise ValueError("label must be 'A' or 'B'")
         return rec_A, rec_B, mu  # mu 作为可用的 latent 代表（你也可返回 sigma）
 
 
@@ -1074,5 +1074,5 @@ if __name__ == '__main__':
 
     with torch.no_grad():
         x = torch.randn(24, 1, 256, 256, device=device)
-        y_ct, y_mr, mu = model(x, 'ct')
-        print("mu:", tuple(mu.shape), "ct:", tuple(y_ct.shape), "mr:", tuple(y_mr.shape))
+        y_A, y_B, mu = model(x, 'A')
+        print("mu:", tuple(mu.shape), "A:", tuple(y_A.shape), "B:", tuple(y_B.shape))

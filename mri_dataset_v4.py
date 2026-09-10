@@ -156,11 +156,11 @@ class PairMRIDataset(Dataset):
             tumor_dir = os.path.join(data_path, "tumor")
             body_dir = os.path.join(data_path, "body")
 
-            phase_1_files = [f for f in os.listdir(phase_1_dir) if f.startswith(p_id) and f.endswith(".nii.gz")]
-            phase_2_files = [f for f in os.listdir(phase_2_dir) if f.startswith(p_id) and f.endswith(".nii.gz")]
-            mask_files = [f for f in os.listdir(mask_dir) if f.startswith(p_id) and f.endswith(".nii.gz")]
-            tumor_files = [f for f in os.listdir(tumor_dir) if f.startswith(p_id) and f.endswith(".nii.gz")]
-            body_files = [f for f in os.listdir(body_dir) if f.startswith(p_id) and f.endswith(".nii.gz")]
+            phase_1_files = [f for f in os.listdir(phase_1_dir) if f.startswith(p_id + '_') and f.endswith(".nii.gz")]
+            phase_2_files = [f for f in os.listdir(phase_2_dir) if f.startswith(p_id + '_') and f.endswith(".nii.gz")]
+            mask_files = [f for f in os.listdir(mask_dir) if f.startswith(p_id + '_') and f.endswith(".nii.gz")]
+            tumor_files = [f for f in os.listdir(tumor_dir) if f.startswith(p_id + '_') and f.endswith(".nii.gz")]
+            body_files = [f for f in os.listdir(body_dir) if f.startswith(p_id + '_') and f.endswith(".nii.gz")]
 
             self.phase_1_images.extend([os.path.join(phase_1_dir, f) for f in phase_1_files])
             self.phase_2_images.extend([os.path.join(phase_2_dir, f) for f in phase_2_files])
@@ -212,7 +212,7 @@ class PairMRIDataset(Dataset):
             & set(body_dict.keys())
         )
 
-        for key in common_keys:
+        for key in sorted(common_keys):
             self.image_pairs.append((phase_1_dict[key], phase_2_dict[key], mask_dict[key], tumor_dict[key], body_dict[key]))
 
         random.shuffle(self.image_pairs)

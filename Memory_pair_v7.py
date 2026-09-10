@@ -71,7 +71,7 @@ class MemorySharedPartsV7(nn.Module):
         self.kdim = int(kdim)
         self.vdim = int(vdim)
 
-        self.seg_idx = list(seg_idx) if seg_idx is not None else list(SEG_IDX_V8)
+        self.seg_idx = list(seg_idx) if seg_idx is not None else list(SEG_IDX_V7)
         self.seg_groups = dict(seg_groups) if seg_groups is not None else dict(SEG_GROUPS_MAJOR)
         self.lesion_ids = list(lesion_ids) if lesion_ids is not None else list(LESION_IDS)
 

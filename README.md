@@ -14,6 +14,8 @@ The code includes the main encoder-decoder model, random-direction content/style
 ├── mri_dataset_v4.py          # Paired multi-phase MRI slice dataset
 ├── loss_fn.py                 # Training losses
 ├── train_v5.py                # Distributed training script
+├── training_utils.py          # Gradient synchronization and validation utilities
+├── tests/                     # CPU regression tests
 └── lesion_patient_list.txt    # Patient-level lesion category list used for splitting
 ```
 
@@ -102,6 +104,49 @@ LLD-MMRI/lesion_patient_list.txt
 ```
 
 The dataset class performs lesion-stratified patient-level train/validation splitting internally. Separate `train/` and `val/` folders are therefore not required.
+
+## Implementation corrections
+
+The September 2026 maintenance update fixes the following issues in the released
+implementation while preserving the model architecture, loss weights and default
+training hyperparameters:
+
+- Patient filename matching includes the underscore delimiter, so an ID cannot
+  accidentally select a different patient whose ID shares its prefix. Paired
+  sample keys are sorted before the existing seeded shuffle to keep dataset
+  indices consistent across distributed processes.
+- The generator is accessed through explicit encode/decode methods in the
+  training loop. These calls bypass DDP's forward path, so its gradients are now
+  explicitly averaged across ranks before each optimizer step. The content and
+  style samplers retain their existing DDP synchronization.
+- Validation assigns each sample to exactly one rank, without padding the last
+  shard with duplicate samples. Validation-only sampler calls use the underlying
+  modules, allowing different numbers of validation batches on different ranks.
+- PSNR is calculated per image and then averaged over samples. An identical
+  prediction returns a tensor containing positive infinity. This avoids both
+  batch-grouping dependence and the former Python-float `.item()` error.
+- Resumed training uses the saved next epoch and best validation PSNR, instead
+  of restarting epoch numbering and warm-up from zero.
+- The default memory constructor uses the defined V7 label list. The public
+  autoencoder `forward` method and its example use the existing A/B raw decoders.
+
+These corrections do not retroactively change existing checkpoints or reported
+results. Keep the commit ID and training configuration with each new experiment.
+The original published source remains available in the Git history; the last
+commit before these fixes is `2eee0ed11c8116bc1db3341be1776f7252783c65`.
+
+### Regression tests
+
+With the dataset and model dependencies installed, run the CPU regression suite:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+The tests use synthetic data and small models, including multiple CPU processes
+with the Gloo backend. They do not download datasets or pretrained weights.
+They cover the corrected interfaces and distributed behavior; they are not a
+replacement for a complete training run or a reproduction of the paper's scores.
 
 ## Training Notes
 
